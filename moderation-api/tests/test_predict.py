@@ -1,7 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from main import app, moderation_service
+from main import app
+from routers.predict import moderation_service
 
 client = TestClient(app)
 
@@ -36,26 +37,50 @@ def test_predict(advertisement, is_verified, images_qty, expected):
     assert response.json() is expected
 
 
-def test_missing_required_field(advertisement):
-    del advertisement["seller_id"]
+@pytest.mark.parametrize(
+    "field",
+    [
+        "seller_id",
+        "is_verified_seller",
+        "item_id",
+        "name",
+        "description",
+        "category",
+        "images_qty",
+    ],
+)
+def test_missing_required_field(advertisement, field):
+    del advertisement[field]
 
     response = client.post("/predict", json=advertisement)
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     error, = response.json()["detail"]
-    assert error["loc"] == ["body", "seller_id"]
+    assert error["loc"] == ["body", field]
     assert error["type"] == "missing"
 
 
-def test_invalid_field_type(advertisement):
-    advertisement["images_qty"] = "0"
+@pytest.mark.parametrize(
+    ("field", "value", "error_type"),
+    [
+        ("seller_id", "12", "int_type"),
+        ("is_verified_seller", "false", "bool_type"),
+        ("item_id", True, "int_type"),
+        ("name", 123, "string_type"),
+        ("description", [], "string_type"),
+        ("category", 1.5, "int_type"),
+        ("images_qty", "0", "int_type"),
+    ],
+)
+def test_invalid_field_type(advertisement, field, value, error_type):
+    advertisement[field] = value
 
     response = client.post("/predict", json=advertisement)
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     error, = response.json()["detail"]
-    assert error["loc"] == ["body", "images_qty"]
-    assert error["type"] == "int_type"
+    assert error["loc"] == ["body", field]
+    assert error["type"] == error_type
 
 
 def test_malformed_json():
@@ -77,3 +102,21 @@ def test_service_error(advertisement, monkeypatch):
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal server error"}
+
+
+def test_negative_images_qty(advertisement):
+    advertisement["images_qty"] = -1
+
+    response = client.post("/predict", json=advertisement)
+
+    assert response.status_code == 400
+    error, = response.json()["detail"]
+    assert error["loc"] == ["body", "images_qty"]
+    assert error["type"] == "greater_than_equal"
+
+
+def test_missing_body():
+    response = client.post("/predict")
+
+    assert response.status_code == 400
+    assert response.json()["detail"][0]["type"] == "missing"
