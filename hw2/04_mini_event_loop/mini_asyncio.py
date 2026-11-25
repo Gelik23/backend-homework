@@ -110,7 +110,7 @@ class Scheduler:
             self.sleeping.append((time.monotonic() + syscall.duration, tid, task))
         elif isinstance(syscall, AwaitTask):
             if syscall.tid in self.results:
-                self.ready.appendleft((tid, task, self.results[syscall.tid]))
+                self.ready.append((tid, task, self.results[syscall.tid]))
             else:
                 self.waiters.setdefault(syscall.tid, []).append((tid, task))
         else:
